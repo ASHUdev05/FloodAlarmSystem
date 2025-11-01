@@ -1,0 +1,7 @@
+tensorflow
+numpy
+Pillow
+requests
+supabase-py
+sendgrid
+python-dotenv
