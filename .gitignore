@@ -21,3 +21,6 @@ env/
 # OS-specific files
 .DS_Store
 Thumbs.db
+
+# legacy api
+flood_alarm_api/
