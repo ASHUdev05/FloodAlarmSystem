@@ -2,3 +2,4 @@ fastapi
 uvicorn[standard]
 supabase-client
 python-dotenv
+aiohttp

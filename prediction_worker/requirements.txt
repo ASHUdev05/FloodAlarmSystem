@@ -5,3 +5,4 @@ requests
 supabase-client
 sendgrid
 python-dotenv
+aiohttp
