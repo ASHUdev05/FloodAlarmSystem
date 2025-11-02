@@ -2,7 +2,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone  # <-- FIX 1
 from dotenv import load_dotenv
-from supabase_py import create_client, Client
+from supabase import create_client, Client
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 from prediction_utils import load_prediction_model, get_prediction

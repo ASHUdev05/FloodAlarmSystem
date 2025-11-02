@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI, Depends, HTTPException, Header
-from supabase_py import create_client, Client
+from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
