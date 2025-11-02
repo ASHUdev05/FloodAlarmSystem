@@ -12,9 +12,6 @@ env/
 .env
 *.env
 
-# Large model files
-*.h5
-
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints
 

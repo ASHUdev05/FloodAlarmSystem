@@ -1,6 +1,7 @@
 import io
+import os
 import requests
-from datetime import datetime, timezone  # <-- FIX 1
+from datetime import datetime, timezone
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
@@ -9,7 +10,11 @@ from PIL import Image
 # --- Model Config ---
 IMG_HEIGHT = 256
 IMG_WIDTH = 256
-MODEL_PATH = "flood_model.h5"
+# 2. MAKE THE PATH DYNAMIC AND ROBUST
+# This gets the absolute path of the directory this file (prediction_utils.py) is in
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# This joins that directory path with the model filename
+MODEL_PATH = os.path.join(BASE_DIR, "flood_model.h5")
 
 # --- Dice functions (copied from your old main.py) ---
 def dice_coefficient(y_true, y_pred, smooth=1):
@@ -23,7 +28,7 @@ def dice_loss(y_true, y_pred):
 
 # --- Load Model (function) ---
 def load_prediction_model():
-    print(f"Loading model from {MODEL_PATH}...")
+    print(f"Loading model from {MODEL_PATH}...") # This will now print the full, correct path
     model = tf.keras.models.load_model(
         MODEL_PATH,
         custom_objects={'dice_loss': dice_loss, 'dice_coefficient': dice_coefficient}
@@ -42,7 +47,7 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
 def build_satellite_url(lat, lon, date=None):
     if date is None:
         # Use timezone-aware UTC time
-        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")  # <-- FIX 2
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")  
     
     min_lon, max_lon = lon - 0.2, lon + 0.2
     min_lat, max_lat = lat - 0.2, lat + 0.2
@@ -51,7 +56,7 @@ def build_satellite_url(lat, lon, date=None):
         "https://wvs.earthdata.nasa.gov/api/v1/snapshot?"
         f"REQUEST=GetSnapshot&TIME={date}"
         "&BBOX={},{},{},{}"
-        "&CRS=EPSG:4326&LAYERS=VIIRS_SNPP_CorrectedRefle/ctance_TrueColor"
+        "&CRS=EPSG:4326&LAYERS=VIIRS_SNPP_CorrectedReflectance_TrueColor"
         "&FORMAT=image/jpeg&WIDTH=512&HEIGHT=512"
     ).format(min_lon, min_lat, max_lon, max_lat)
 
