@@ -3,6 +3,6 @@ tensorflow
 numpy
 Pillow
 requests
-supabase-client
+supabase
 sendgrid
 python-dotenv
