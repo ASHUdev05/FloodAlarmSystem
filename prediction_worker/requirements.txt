@@ -1,3 +1,4 @@
+aiohttp
 tensorflow
 numpy
 Pillow
@@ -5,4 +6,3 @@ requests
 supabase-client
 sendgrid
 python-dotenv
-aiohttp
