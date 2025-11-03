@@ -193,17 +193,19 @@ export default function LiveCheckPage() {
             Live Map: {selectedLocation.name}
           </h3>
           
-          <div className="aspect-w-16 aspect-h-9 border rounded-lg overflow-hidden mb-4">
-            {/* Embedded NASA Worldview Map */}
-            <iframe
-              src={mapUrl}
-              className="w-full h-64"
-              frameBorder="0"
-              allowFullScreen
-              title="NASA Worldview Map"
-            ></iframe>
-          </div>
-          <p className="text-sm text-gray-500 mb-4">
+          {/* --- THIS IS THE FIX --- */}
+          {/* We replace the <iframe> with a styled <a> tag that acts as a button */}
+          <a
+            href={mapUrl}
+            target="_blank" // This opens it in a new tab
+            rel="noopener noreferrer" // Good practice for security
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-150 ease-in-out text-center block"
+          >
+            View Live Map
+          </a>
+          {/* --- END FIX --- */}
+          
+          <p className="text-sm text-gray-500 my-4">
             Use the map to visually check for flooding. Data is from MODIS (Terra) satellite, approx. 2 days ago.
           </p>
 
