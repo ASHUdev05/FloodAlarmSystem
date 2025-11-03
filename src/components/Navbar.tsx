@@ -3,7 +3,8 @@ import { useAuth } from '../AuthContext';
 import { supabase } from '../lib/api'; // Get supabase client from api.ts
 
 export default function Navbar() {
-  const { user, session } = useAuth();
+  // FIX: Removed 'user' since it was not being used.
+  const { session } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -20,7 +21,9 @@ export default function Navbar() {
         <div className="flex justify-between h-16">
           <div className="flex items-center">
             <Link to="/" className="flex-shrink-0 flex items-center">
-              <span className="text-2xl font-bold text-blue-600">🌊 Flood Alarm</span>
+              <span className="text-2xl font-bold text-blue-600">
+                🌊 Flood Alarm
+              </span>
             </Link>
           </div>
           <div className="flex items-center">
@@ -68,3 +71,4 @@ export default function Navbar() {
     </nav>
   );
 }
+
