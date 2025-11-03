@@ -1,11 +1,12 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, Header, Annotated
+from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import uvicorn
 from contextlib import asynccontextmanager
+from typing import Annotated, List  # FIXED import
 
 # Import the new prediction utils
 from prediction_utils import load_prediction_model, get_prediction
@@ -54,6 +55,8 @@ app.add_middleware(
 # --- Supabase Setup ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("SUPABASE_URL or SUPABASE_KEY environment variables not set")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
@@ -89,13 +92,10 @@ def predict_live(lat: float, lon: float, user_id: Annotated[str, Depends(get_use
     if model is None:
         raise HTTPException(status_code=500, detail="ML model is not loaded on server.")
 
-    # Get_prediction now returns None on "No Data"
     prediction_pct = get_prediction(model, lat, lon)
 
-    # --- FIX: Handle "No Data" (None) case ---
     if prediction_pct is None:
         raise HTTPException(status_code=503, detail="Satellite data not available for this location or date.")
-    # --- END FIX ---
         
     return {"latitude": lat, "longitude": lon, "flood_percentage": prediction_pct}
 
@@ -122,7 +122,7 @@ def subscribe_to_location(loc: LocationBase, user_id: str = Depends(get_user_id)
         print(f"Error in /subscribe: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/subscriptions", response_model=list[Subscription])
+@app.get("/subscriptions", response_model=List[Subscription])  # FIXED type hint
 def get_my_subscriptions(user_id: str = Depends(get_user_id)):
     try:
         data = supabase.rpc("get_user_subscriptions", {"p_user_id": user_id}).execute()
