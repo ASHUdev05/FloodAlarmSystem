@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../AuthContext';
-import { createSubscription, getLivePrediction } from '../lib/api';
+import { subscribeToLocation, getLivePrediction } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 
 // Type for the geocoding API results
@@ -107,7 +107,7 @@ export default function LiveCheckPage() {
     setIsLoading(true);
     setError(null);
     try {
-      await createSubscription(
+      await subscribeToLocation(
         {
           name: prediction.name,
           lat: prediction.latitude,
