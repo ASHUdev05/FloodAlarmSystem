@@ -1,0 +1,54 @@
+name: Deploy React App to GitHub Pages
+
+on:
+  # Runs on pushes to the new 'frontend' branch
+  push:
+    branches: ['frontend'] # <-- UPDATED
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Allow this job to clone the repo and create a page deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out your repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the React app
+        # This command runs "npm run build"
+        # It also sets the VITE_ variables from your repository's secrets
+        run: |
+          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }} \
+          VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }} \
+          VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }} \
+          npm run build
+        env:
+          # This sets the base path for your app, e.g., /FloodAlarmSystem
+          VITE_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+
+      - name: Upload the build artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist' # The folder Vite builds to
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
