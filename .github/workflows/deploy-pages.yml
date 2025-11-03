@@ -37,7 +37,7 @@ jobs:
         run: |
           VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }} \
           VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }} \
-          VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }} \
+          VITE_API_URL=${{ secrets.VITE_API_URL }} \
           npm run build
         env:
           # This sets the base path for your app, e.g., /FloodAlarmSystem
