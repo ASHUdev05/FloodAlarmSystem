@@ -83,8 +83,9 @@ export const getMySubscriptions = async (
 
 /**
  * OLD: Subscribes a user to a new location
+ * (FIX: Renamed from subscribeToLocation to createSubscription)
  */
-export const subscribeToLocation = async (
+export const createSubscription = async (
   location: NewLocation,
   userId: string
 ) => {
