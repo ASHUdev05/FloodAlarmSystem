@@ -3,22 +3,21 @@ name: Deploy React App to GitHub Pages
 on:
   # Runs on pushes to the new 'frontend' branch
   push:
-    branches: ['frontend'] # <-- UPDATED
+    branches: ['frontend']
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Allow this job to clone the repo and create a page deployment
+# Set permissions for the GITHUB_TOKEN
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# This workflow is now split into two jobs: build and deploy
 jobs:
-  deploy:
+  # First, the build job
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out your repository
         uses: actions/checkout@v4
@@ -43,12 +42,31 @@ jobs:
         env:
           # This sets the base path for your app, e.g., /FloodAlarmSystem
           VITE_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
-
-      - name: Upload the build artifact
+      
+      - name: Upload build artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: './dist' # The folder Vite builds to
 
+  # Second, the deploy job
+  deploy:
+    # This job needs the build job to finish first
+    needs: build
+    
+    # Configure permissions for this job
+    permissions:
+      pages: write
+      id-token: write
+
+    # Set the environment for GitHub Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+      
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        # This action automatically finds the artifact uploaded in the 'build' job
+
