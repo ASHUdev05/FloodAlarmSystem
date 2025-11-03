@@ -57,8 +57,8 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
 # --- Build Satellite URL ---
 def build_satellite_url(lat, lon, date=None):
     if date is None:
-        # 3. FIX: Use *yesterday's* date to ensure data is processed
-        date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        # 3. FIX: Use *2 days ago* date to ensure data is processed
+        date = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
 
     min_lon, max_lon = lon - 0.2, lon + 0.2
     min_lat, max_lat = lat - 0.2, lat + 0.2
@@ -74,7 +74,7 @@ def build_satellite_url(lat, lon, date=None):
 # --- Prediction Function ---
 def get_prediction(model, lat, lon):
     try:
-        # Build URL for *yesterday* to ensure data is available
+        # Build URL for *2 days ago* to ensure data is available
         url = build_satellite_url(lat, lon)
         print(f"Fetching: {url}") # Add logging
         r = requests.get(url)
@@ -104,3 +104,4 @@ def get_prediction(model, lat, lon):
     except Exception as e:
         print(f"❌ Prediction error for ({lat},{lon}): {e}")
         return None
+
