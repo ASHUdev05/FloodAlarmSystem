@@ -1,13 +1,25 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, Query
+from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from fastapi.middleware.cors import CORSMiddleware  # <-- IMPORTED
-from typing import Annotated                   # <-- IMPORTED
+from typing import Annotated, Any
+
+# --- New Imports for Prediction ---
+import numpy as np
+import tensorflow as tf
+from prediction_utils import load_prediction_model, get_prediction
 
 # Load environment variables
 load_dotenv()
+
+# --- Load Model on Startup ---
+# This will run when the Render service boots up
+print("Loading ML model...")
+model = load_prediction_model()
+print("ML model loaded successfully.")
+
 
 # Supabase setup
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -16,21 +28,21 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI(title="Flood Alarm - Middleware API")
 
-# --- ADD CORS MIDDLEWARE ---
-# This block allows your frontend to talk to this backend
+# --- CORS Middleware ---
+# Define the list of allowed origins
 origins = [
-    "https://ashudev05.github.io",  # Your deployed GitHub Pages frontend
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://ashudev05.github.io", # Your deployed frontend
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows GET, POST, DELETE, etc.
-    allow_headers=["*"],  # Allows all headers, including "user-id"
+    allow_methods=["*"], # Allows all methods
+    allow_headers=["*"], # Allows all headers
 )
-# --- END CORS MIDDLEWARE ---
-
 
 # --- Pydantic Models ---
 class LocationBase(BaseModel):
@@ -44,29 +56,58 @@ class Subscription(BaseModel):
     lat: float
     lon: float
 
-# --- Auth Dependency (Simple Header) ---
-# This is a cleaner way to write the dependency
-async def get_user_id(user_id: Annotated[str, Header(alias="user-id")]):
+# --- Auth Dependency ---
+async def get_user_id(user_id: Annotated[str | None, Header()] = None):
     if not user_id:
         raise HTTPException(status_code=401, detail="User-ID header missing")
     return user_id
 
 # --- API Endpoints ---
+
 @app.get("/")
 def root():
     return {"message": "Flood Alarm Middleware API"}
 
+# --- NEW PREDICTION ENDPOINT ---
+@app.get("/predict")
+def predict_on_demand(
+    lat: float = Query(...), 
+    lon: float = Query(...),
+    user_id: str = Depends(get_user_id) # Protects the endpoint
+):
+    """
+    Runs an on-demand prediction for a specific lat/lon.
+    """
+    try:
+        print(f"Running on-demand prediction for ({lat}, {lon})")
+        # Use the get_prediction function from prediction_utils
+        flood_pct = get_prediction(model, lat, lon)
+
+        if flood_pct is None:
+            raise HTTPException(status_code=500, detail="Failed to fetch or process satellite image")
+            
+        return {
+            "latitude": lat,
+            "longitude": lon,
+            "flood_percentage": flood_pct
+        }
+
+    except Exception as e:
+        print(f"Error during prediction: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- bestehende Subscription Endpoints ---
+
 @app.post("/subscribe", status_code=201)
 def subscribe_to_location(loc: LocationBase, user_id: str = Depends(get_user_id)):
     try:
-        # 1. Find or create the location.
         location_data = supabase.table("locations").upsert(
             {"lat": loc.lat, "lon": loc.lon, "name": loc.name}
         ).execute()
 
         location_id = location_data.data[0]['id']
 
-        # 2. Create the subscription linking the user to the location
         subscription_data = supabase.table("subscriptions").insert({
             "user_id": user_id,
             "location_id": location_id
@@ -81,7 +122,6 @@ def subscribe_to_location(loc: LocationBase, user_id: str = Depends(get_user_id)
 
 @app.get("/subscriptions", response_model=list[Subscription])
 def get_my_subscriptions(user_id: str = Depends(get_user_id)):
-    # This query joins subscriptions with locations to get all info
     try:
         data = supabase.rpc("get_user_subscriptions", {"p_user_id": user_id}).execute()
         return data.data
