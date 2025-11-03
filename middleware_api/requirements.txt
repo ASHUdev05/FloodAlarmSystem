@@ -3,3 +3,7 @@ fastapi
 uvicorn[standard]
 supabase
 python-dotenv
+fastapi-cors
+tensorflow
+numpy
+pillow
