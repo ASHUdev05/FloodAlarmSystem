@@ -3,6 +3,8 @@ from fastapi import FastAPI, Depends, HTTPException, Header
 from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware  # <-- IMPORTED
+from typing import Annotated                   # <-- IMPORTED
 
 # Load environment variables
 load_dotenv()
@@ -13,6 +15,22 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI(title="Flood Alarm - Middleware API")
+
+# --- ADD CORS MIDDLEWARE ---
+# This block allows your frontend to talk to this backend
+origins = [
+    "https://ashudev05.github.io",  # Your deployed GitHub Pages frontend
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows GET, POST, DELETE, etc.
+    allow_headers=["*"],  # Allows all headers, including "user-id"
+)
+# --- END CORS MIDDLEWARE ---
+
 
 # --- Pydantic Models ---
 class LocationBase(BaseModel):
@@ -26,15 +44,11 @@ class Subscription(BaseModel):
     lat: float
     lon: float
 
-# --- Auth Dependency (Placeholder) ---
-# In a real React app, your user would log in (using Supabase Auth)
-# and send an "Authorization: Bearer <JWT_TOKEN>" header.
-# This function would verify the token and return the user's ID.
-# For this demo, we'll just require a "user-id" header.
-async def get_user_id(user_id: str = Header(...)):
+# --- Auth Dependency (Simple Header) ---
+# This is a cleaner way to write the dependency
+async def get_user_id(user_id: Annotated[str, Header(alias="user-id")]):
     if not user_id:
         raise HTTPException(status_code=401, detail="User-ID header missing")
-    # In a real app, you'd validate this user_id or token
     return user_id
 
 # --- API Endpoints ---
@@ -45,8 +59,7 @@ def root():
 @app.post("/subscribe", status_code=201)
 def subscribe_to_location(loc: LocationBase, user_id: str = Depends(get_user_id)):
     try:
-        # 1. Find or create the location. `upsert` is perfect here.
-        # It finds a row with matching lat/lon or inserts a new one.
+        # 1. Find or create the location.
         location_data = supabase.table("locations").upsert(
             {"lat": loc.lat, "lon": loc.lon, "name": loc.name}
         ).execute()
@@ -70,7 +83,6 @@ def subscribe_to_location(loc: LocationBase, user_id: str = Depends(get_user_id)
 def get_my_subscriptions(user_id: str = Depends(get_user_id)):
     # This query joins subscriptions with locations to get all info
     try:
-        # Use rpc (Remote Procedure Call) for a custom SQL join
         data = supabase.rpc("get_user_subscriptions", {"p_user_id": user_id}).execute()
         return data.data
     except Exception as e:
@@ -86,3 +98,4 @@ def unsubscribe(location_id: str, user_id: str = Depends(get_user_id)):
         return {"status": "success", "message": "Unsubscribed"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
