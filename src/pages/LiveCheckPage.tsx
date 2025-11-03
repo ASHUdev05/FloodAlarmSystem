@@ -43,7 +43,7 @@ export default function LiveCheckPage() {
     setSearchResults([]);
     try {
       const response = await fetch(
-        `https://geocoding-api.open-meteoe.com/v1/search?name=${searchTerm}&count=5`
+        `https://geocoding-api.open-meteo.com/v1/search?name=${searchTerm}&count=5`
       );
       const data = await response.json();
       if (data.results) {
