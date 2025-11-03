@@ -15,8 +15,8 @@ MODEL_PATH = os.path.join(BASE_DIR, "flood_model.h5")
 
 IMG_HEIGHT = 256
 IMG_WIDTH = 256
-# 2. Set a minimum file size. "No Data" images are ~3KB. Real images are >10KB.
-MIN_IMAGE_SIZE_BYTES = 10000  # 10 KB
+# 2. FIX: Set minimum size just above the "No Data" size (1820 bytes)
+MIN_IMAGE_SIZE_BYTES = 2000  # 2 KB (was 3000)
 
 # --- Dice functions ---
 def dice_coefficient(y_true, y_pred, smooth=1):
