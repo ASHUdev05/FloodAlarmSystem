@@ -1,22 +1,19 @@
 import io
 import os
 import requests
-from datetime import datetime, timezone, timedelta  # <-- 1. Import timedelta
+from datetime import datetime, timezone, timedelta
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from PIL import Image
 
 # --- Model Config ---
-# Get the absolute path to the directory this file is in
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Join it with the model file name
 MODEL_PATH = os.path.join(BASE_DIR, "flood_model.h5")
 
 IMG_HEIGHT = 256
 IMG_WIDTH = 256
-# 2. FIX: Set minimum size just above the "No Data" size (1820 bytes)
-MIN_IMAGE_SIZE_BYTES = 2000  # 2 KB (was 3000)
+MIN_IMAGE_SIZE_BYTES = 2000  # 2 KB (this check is still good)
 
 # --- Dice functions ---
 def dice_coefficient(y_true, y_pred, smooth=1):
@@ -35,7 +32,6 @@ def load_prediction_model():
         print(f"ERROR: Model file not found at {MODEL_PATH}")
         return None
     try:
-        # Load model without compiling optimizer, we only need inference
         model = tf.keras.models.load_model(
             MODEL_PATH,
             custom_objects={'dice_loss': dice_loss, 'dice_coefficient': dice_coefficient},
@@ -57,44 +53,42 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
 # --- Build Satellite URL ---
 def build_satellite_url(lat, lon, date=None):
     if date is None:
-        # 3. FIX: Use *2 days ago* date to ensure data is processed
+        # MODIS is faster, so 2 days is very safe
         date = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
 
     min_lon, max_lon = lon - 0.2, lon + 0.2
     min_lat, max_lat = lat - 0.2, lat + 0.2
 
+    # --- FIX: Switch to a more reliable data layer ---
+    LAYER_NAME = "MODIS_Terra_CorrectedReflectance_TrueColor"
+    # --- END FIX ---
+
     return (
         "https://wvs.earthdata.nasa.gov/api/v1/snapshot?"
         f"REQUEST=GetSnapshot&TIME={date}"
         "&BBOX={},{},{},{}"
-        "&CRS=EPSG:4326&LAYERS=VIIRS_SNPP_CorrectedReflectance_TrueColor"
+        f"&CRS=EPSG:4326&LAYERS={LAYER_NAME}"
         "&FORMAT=image/jpeg&WIDTH=512&HEIGHT=512"
     ).format(min_lon, min_lat, max_lon, max_lat)
 
 # --- Prediction Function ---
 def get_prediction(model, lat, lon):
     try:
-        # Build URL for *2 days ago* to ensure data is available
         url = build_satellite_url(lat, lon)
         print(f"Fetching: {url}") # Add logging
         r = requests.get(url)
 
         if r.status_code == 200 and "image" in r.headers.get("content-type", ""):
 
-            # 4. NEW FIX: Check the size of the image.
             image_size = len(r.content)
             if image_size < MIN_IMAGE_SIZE_BYTES:
                 print(f"⚠️ Fetched image for ({lat},{lon}) is too small ({image_size} bytes). Assuming 'No Data'.")
-                # Return 0% flood for "No Data"
-                return 0.0
-            # --- END FIX ---
+                # --- FIX: Return None, not 0.0 ---
+                return None
+                # --- END FIX ---
 
             img_array = preprocess_image(r.content)
-
-            # Run prediction
             prediction = model.predict(img_array)[0, :, :, 0]
-
-            # Calculate percentage
             flood_pct = float(np.sum(prediction > 0.5) / (IMG_HEIGHT * IMG_WIDTH) * 100)
             print(f"✅ Prediction for ({lat},{lon}): {flood_pct:.2f}%") # Add logging
             return round(flood_pct, 2)
@@ -104,4 +98,3 @@ def get_prediction(model, lat, lon):
     except Exception as e:
         print(f"❌ Prediction error for ({lat},{lon}): {e}")
         return None
-
