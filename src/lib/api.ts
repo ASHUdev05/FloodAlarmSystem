@@ -1,37 +1,74 @@
 import { createClient } from '@supabase/supabase-js';
 
-// 1. IMPORT ENV VARIABLES
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// --- Supabase Client ---
+// We also export this so the AuthContext can use it
+export const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL!,
+  import.meta.env.VITE_SUPABASE_ANON_KEY!
+);
+
+// --- API Client ---
+// Use the correct environment variable VITE_API_URL
 const apiUrl = import.meta.env.VITE_API_URL;
 
-// 2. INITIALIZE SUPABASE
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (!apiUrl) {
+  console.error(
+    'VITE_API_URL is not set. Please check your .env file or GitHub secrets.'
+  );
+}
 
-// 3. DEFINE API INTERFACES
-export interface LocationSubscription {
+// --- Types ---
+export interface Subscription {
   location_id: string;
   name: string;
-  lat: number;
-  lon: number;
+  lat: number; // Use 'number' for TypeScript
+  lon: number; // Use 'number' for TypeScript
 }
 
-export interface NewLocation {
-  lat: number;
-  lon: number;
+interface SubscriptionPayload {
   name: string;
+  lat: number;
+  lon: number;
 }
 
-// 4. API FUNCTIONS FOR OUR MIDDLEWARE
+export interface PredictionResult {
+  latitude: number;
+  longitude: number;
+  flood_percentage: number;
+}
+
+// --- API Functions ---
 
 /**
- * Fetches all subscriptions for a given user
+ * Fetches the on-demand prediction for a location
  */
-export const getMySubscriptions = async (userId: string): Promise<LocationSubscription[]> => {
+export const getLivePrediction = async (
+  lat: number,
+  lon: number,
+  userId: string
+): Promise<PredictionResult> => {
+  const response = await fetch(
+    `${apiUrl}/predict?lat=${lat}&lon=${lon}`, // Pass lat/lon as query params
+    {
+      headers: {
+        'user-id': userId,
+      },
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch live prediction');
+  }
+  return response.json();
+};
+
+/**
+ * Fetches all subscriptions for a user
+ */
+export const getSubscriptions = async (
+  userId: string
+): Promise<Subscription[]> => {
   const response = await fetch(`${apiUrl}/subscriptions`, {
-    method: 'GET',
     headers: {
-      'Content-Type': 'application/json',
       'user-id': userId,
     },
   });
@@ -42,19 +79,23 @@ export const getMySubscriptions = async (userId: string): Promise<LocationSubscr
 };
 
 /**
- * Subscribes a user to a new location
+ * Creates a new subscription
  */
-export const subscribeToLocation = async (location: NewLocation, userId: string) => {
+export const createSubscription = async (
+  payload: SubscriptionPayload,
+  userId: string
+) => {
   const response = await fetch(`${apiUrl}/subscribe`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'user-id': userId,
     },
-    body: JSON.stringify(location),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error('Failed to subscribe');
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to create subscription');
   }
   return response.json();
 };

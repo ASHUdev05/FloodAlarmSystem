@@ -4,45 +4,51 @@ import Footer from './components/Footer';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
-import CitySelectionPage from './pages/CitySelectionPage';
 import DataDisplayPage from './pages/DataDisplayPage';
+import CitySelectionPage from './pages/CitySelectionPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import LiveCheckPage from './pages/LiveCheckPage'; // Import the new page
 
 function App() {
   return (
-    <div className="flex flex-col min-h-screen">
-      {/* Navbar is rendered ONCE here, outside the router */}
+    <div className="min-h-screen flex flex-col">
       <Navbar />
-      <main className="flex-grow">
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          
-          {/* Protected Routes */}
-          <Route
-            path="/select-city"
-            element={
-              <ProtectedRoute>
-                <CitySelectionPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <DataDisplayPage />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </main>
-      {/* Footer is rendered ONCE here */}
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+
+        {/* Protected Routes */}
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DataDisplayPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/add-location"
+          element={
+            <ProtectedRoute>
+              <CitySelectionPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* New Route for Live Check */}
+        <Route
+          path="/live-check"
+          element={
+            <ProtectedRoute>
+              <LiveCheckPage />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
       <Footer />
     </div>
   );
 }
 
 export default App;
-
