@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuth } from '../AuthContext';
-import { getLivePrediction, subscribeToLocation } from '../lib/api'; // Use createSubscription
+import { subscribeToLocation } from '../lib/api'; // We don't need getLivePrediction
 import { useNavigate } from 'react-router-dom';
 
 // Type for the geocoding API results
@@ -12,34 +12,39 @@ interface GeoResult {
   country: string;
 }
 
-// Type for our prediction result
-interface Prediction {
+// This will now hold our selected location
+interface SelectedLocation {
   name: string;
   lat: number;
   lon: number;
-  percentage: number | null; // Allow null for "No Data"
 }
+
+// Helper to get the date from 2 days ago
+const getNasaDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() - 2);
+  return date.toISOString().split('T')[0];
+};
 
 export default function LiveCheckPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
-  
+
   // States for search
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<GeoResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // State for prediction results
-  const [prediction, setPrediction] = useState<Prediction | null>(null);
-  const [isChecking, setIsChecking] = useState(false);
+  // State for the selected location to show on the map
+  const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
 
-  // 1. Search for a city
+  // 1. Search for a city (no change)
   const handleSearch = async () => {
     if (!searchTerm) return;
     setIsSearching(true);
     setError(null);
-    setPrediction(null); // Clear old results
+    setSelectedLocation(null); // Clear old map
     setSearchResults([]);
     try {
       const response = await fetch(
@@ -57,8 +62,8 @@ export default function LiveCheckPage() {
     setIsSearching(false);
   };
 
-  // 2. Get Live Prediction
-  const handleCheckNow = async (location: {
+  // 2. Handle "Check" - This is now synchronous and just sets the state
+  const handleShowOnMap = (location: {
     name: string;
     lat: number;
     lon: number;
@@ -67,56 +72,31 @@ export default function LiveCheckPage() {
       setError('You must be logged in.');
       return;
     }
-    setIsChecking(true);
     setError(null);
-    setPrediction(null);
-
-    try {
-      // --- FIX: Catch errors from the API ---
-      const result = await getLivePrediction(location.lat, location.lon, user.id);
-      setPrediction({
-        name: location.name,
-        lat: location.lat,
-        lon: location.lon,
-        percentage: result.flood_percentage,
-      });
-    } catch (err: any) {
-      // The API now sends a 503 error with a "detail" message
-      if (err.message && err.message.includes('503')) {
-         setError('Satellite data not available for this location. Please try again later.');
-      } else {
-         setError('An error occurred while checking the prediction.');
-      }
-      // Set percentage to null to show "Data not available"
-      setPrediction({
-        name: location.name,
-        lat: location.lat,
-        lon: location.lon,
-        percentage: null, // This is the key change
-      });
-    }
-    // --- END FIX ---
-
-    setIsChecking(false);
+    setSelectedLocation({
+      name: location.name,
+      lat: location.lat,
+      lon: location.lon,
+    });
     setSearchResults([]); // Clear search results
     setSearchTerm(''); // Clear search box
   };
 
-  // 3. Subscribe to the location
+  // 3. Subscribe to the location (no change)
   const handleSubscribe = async () => {
-    if (!prediction || !user) return;
+    if (!selectedLocation || !user) return;
 
     setError(null);
     try {
       await subscribeToLocation(
         {
-          name: prediction.name,
-          lat: prediction.lat,
-          lon: prediction.lon,
+          name: selectedLocation.name,
+          lat: selectedLocation.lat,
+          lon: selectedLocation.lon,
         },
         user.id
       );
-      // On success, redirect to the dashboard to see the new subscription
+      // On success, redirect to the dashboard
       navigate('/dashboard');
     } catch (err: any) {
       if (err.message && err.message.includes('400')) {
@@ -127,13 +107,24 @@ export default function LiveCheckPage() {
     }
   };
 
+  // 4. Memoize the map URL
+  const mapUrl = useMemo(() => {
+    if (!selectedLocation) return '';
+    const date = getNasaDate();
+    const lon = selectedLocation.lon;
+    const lat = selectedLocation.lat;
+    
+    // This is the URL for the embedded NASA Worldview map
+    return `https://worldview.earthdata.nasa.gov/?v=${lon},${lat}&l=MODIS_Terra_CorrectedReflectance_TrueColor&t=${date}&z=8`;
+  }, [selectedLocation]);
+
   return (
     <div className="flex-grow flex flex-col items-center p-4 bg-gray-50">
       <div className="max-w-md w-full bg-white p-8 rounded-lg shadow-xl border border-gray-200">
         <h2 className="text-3xl font-bold text-gray-900 mb-6 text-center">
-          Live Flood Check
+          Live Satellite Map
         </h2>
-        
+
         {/* --- City Search Form --- */}
         <div className="mb-4">
           <label
@@ -148,7 +139,7 @@ export default function LiveCheckPage() {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="e.g., Kolkata, India"
+              placeholder="e.g., Patna, India"
               className="flex-grow shadow-sm appearance-none border rounded-l-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
             />
             <button
@@ -170,7 +161,7 @@ export default function LiveCheckPage() {
                   key={result.id}
                   className="p-3 hover:bg-gray-100 cursor-pointer flex justify-between items-center"
                   onClick={() =>
-                    handleCheckNow({
+                    handleShowOnMap({
                       name: result.name,
                       lat: result.latitude,
                       lon: result.longitude,
@@ -186,7 +177,7 @@ export default function LiveCheckPage() {
                     </span>
                   </div>
                   <span className="text-xs bg-blue-100 text-blue-800 font-medium px-2 py-0.5 rounded-full">
-                    Check
+                    Show on Map
                   </span>
                 </li>
               ))}
@@ -195,38 +186,30 @@ export default function LiveCheckPage() {
         )}
       </div>
 
-      {/* --- Prediction Result Card --- */}
-      {isChecking && <div className="mt-4 text-blue-600">Checking...</div>}
-      
-      {prediction && !isChecking && (
+      {/* --- Live Map Card --- */}
+      {selectedLocation && (
         <div className="max-w-md w-full bg-white p-8 rounded-lg shadow-xl border border-gray-200 mt-6">
           <h3 className="text-2xl font-bold text-gray-900 mb-4">
-            Result for: {prediction.name}
+            Live Map: {selectedLocation.name}
           </h3>
           
-          {prediction.percentage !== null ? (
-            // --- Data is available ---
-            <div className="text-center">
-              <div className="text-6xl font-bold text-blue-600 mb-2">
-                {prediction.percentage}%
-              </div>
-              <div className="text-lg text-gray-600 mb-6">Flood Risk</div>
-            </div>
-          ) : (
-            // --- Data is NOT available ---
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-500 mb-2">
-                Data Not Available
-              </div>
-              <div className="text-md text-gray-500 mb-6">
-                Satellite imagery is not yet processed for this location. Please try again later.
-              </div>
-            </div>
-          )}
+          <div className="aspect-w-16 aspect-h-9 border rounded-lg overflow-hidden mb-4">
+            {/* Embedded NASA Worldview Map */}
+            <iframe
+              src={mapUrl}
+              className="w-full h-64"
+              frameBorder="0"
+              allowFullScreen
+              title="NASA Worldview Map"
+            ></iframe>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Use the map to visually check for flooding. Data is from MODIS (Terra) satellite, approx. 2 days ago.
+          </p>
 
           <button
             onClick={handleSubscribe}
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-150 ease-in-out disabled:opacity-50"
+            className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
           >
             Subscribe to this location
           </button>
@@ -242,3 +225,4 @@ export default function LiveCheckPage() {
     </div>
   );
 }
+

@@ -41,28 +41,6 @@ export interface PredictionResult {
 // --- 4. API FUNCTIONS FOR OUR MIDDLEWARE ---
 
 /**
- * NEW: Fetches the on-demand prediction for a location
- */
-export const getLivePrediction = async (
-  lat: number,
-  lon: number,
-  userId: string
-): Promise<PredictionResult> => {
-  const response = await fetch(
-    `${apiUrl}/predict?lat=${lat}&lon=${lon}`, // Pass lat/lon as query params
-    {
-      headers: {
-        'user-id': userId,
-      },
-    }
-  );
-  if (!response.ok) {
-    throw new Error('Failed to fetch live prediction');
-  }
-  return response.json();
-};
-
-/**
  * OLD: Fetches all subscriptions for a given user
  */
 export const getMySubscriptions = async (
