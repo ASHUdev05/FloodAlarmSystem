@@ -1,200 +1,154 @@
 import { useState } from 'react';
 import { useAuth } from '../AuthContext';
-import { subscribeToLocation, type NewLocation } from '../lib/api';
+import { subscribeToLocation } from '../lib/api'; // Uses the unified function
+import { useNavigate } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 
-// Interface for the results from the free OpenStreetMap API
-interface NominatimResult {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
+// Fix for default Leaflet icon not showing up in React
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+let DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+
+interface Position {
+  lat: number;
+  lng: number;
 }
 
-const CitySelectionPage = () => {
+// Internal component to handle map click events
+function MapClickHandler({ onMapClick, position }: { onMapClick: (pos: Position) => void, position: Position | null }) {
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng); // Send the lat/lng object up
+    },
+  });
+
+  // Render the marker here based on the parent's state
+  return position === null ? null : (
+    <Marker position={position}></Marker>
+  );
+}
+
+export default function CitySelectionPage() {
   const { user } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
-  const [selectedLocation, setSelectedLocation] = useState<NewLocation | null>(null);
-  
-  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // State for the selected location
+  const [position, setPosition] = useState<Position | null>(null);
+  const [locationName, setLocationName] = useState("");
 
-  /**
-   * Fetches locations from OpenStreetMap's free Nominatim API
-   */
-  const handleSearch = async () => {
-    if (!searchQuery) return;
-    setLoading(true);
-    setError(null);
-    setSearchResults([]);
-    setSelectedLocation(null);
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=5`
-      );
-      if (!response.ok) throw new Error('Failed to fetch from Nominatim');
-      const data: NominatimResult[] = await response.json();
-      setSearchResults(data);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+  const handleMapClick = (pos: Position) => {
+    setPosition(pos);
+    setError(null); // Clear error when user selects a new point
   };
 
-  /**
-   * Asks the browser for the user's current location
-   */
-  const handleGetMyLocation = () => {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by your browser.');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setSearchResults([]);
-    setSelectedLocation(null);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        // Need to reverse-geocode to get a name
-        try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
-          );
-          if (!response.ok) throw new Error('Failed to reverse-geocode');
-          const data = await response.json();
-          const locationName = data.display_name || `My Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
-
-          setSelectedLocation({
-            lat: latitude,
-            lon: longitude,
-            name: locationName,
-          });
-        } catch (e: any) {
-          setError(e.message);
-        } finally {
-          setLoading(false);
-        }
-      },
-      () => {
-        setError('Unable to retrieve your location. Please grant permission.');
-        setLoading(false);
-      }
-    );
-  };
-
-  /**
-   * Sets a location from the search results as the one to be subscribed
-   */
-  const handleSelectResult = (result: NominatimResult) => {
-    setSelectedLocation({
-      lat: parseFloat(result.lat),
-      lon: parseFloat(result.lon),
-      name: result.display_name.split(',')[0] || 'Selected Location', // Get the simple name
-    });
-    setSearchResults([]);
-    setSearchQuery('');
-  };
-
-  /**
-   * Calls our backend API to subscribe
-   */
   const handleSubscribe = async () => {
     if (!user) {
-      setError('You must be logged in to subscribe.');
+      setError('You must be logged in.');
       return;
     }
-    if (!selectedLocation) {
-      setError('Please select a location first.');
+    if (!position) {
+      setError('Please select a location on the map by clicking it.');
+      return;
+    }
+    if (!locationName.trim()) {
+      setError('Please give your location a name.');
       return;
     }
 
+    setIsLoading(true);
     setError(null);
-    setStatus('Subscribing...');
+    
     try {
-      await subscribeToLocation(selectedLocation, user.id);
-      setStatus(`Successfully subscribed to ${selectedLocation.name}!`);
-      setSelectedLocation(null); // Clear after success
-    } catch (e: any) {
-      setError(e.message);
-      setStatus(null);
+      // Use the createSubscription function
+      await subscribeToLocation(
+        {
+          name: locationName,
+          lat: position.lat,
+          lon: position.lng,
+        },
+        user.id
+      );
+      navigate('/dashboard'); // Redirect to dashboard on success
+    } catch (err: any) {
+      // Check for the specific 400 error from our API
+      if (err.message && err.message.includes('400')) {
+        setError('You are already subscribed to this location.');
+      } else {
+        setError('Failed to add subscription. Please try again.');
+      }
     }
+    setIsLoading(false);
   };
 
   return (
-    <div className="container mx-auto p-4 max-w-2xl">
-      <h1 className="text-2xl font-bold mb-4">Add a New Location</h1>
-      
-      {/* --- Step 1: Get Location --- */}
-      <div className="p-4 border rounded-lg shadow mb-6">
-        <h2 className="text-lg font-semibold mb-2">1. Find Your Location</h2>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search for a city or address..."
-            className="flex-grow p-2 border rounded"
-          />
-          <button
-            onClick={handleSearch}
-            disabled={loading}
-            className="bg-blue-500 text-white p-2 rounded disabled:opacity-50"
+    <div className="flex-grow flex flex-col items-center p-4 bg-gray-50">
+      <div className="max-w-4xl w-full bg-white p-8 rounded-lg shadow-xl border border-gray-200">
+        <h2 className="text-3xl font-bold text-gray-900 mb-6 text-center">
+          Add New Subscription
+        </h2>
+        <p className="text-center text-gray-600 mb-4">Click anywhere on the map to drop a pin on the location you want to monitor.</p>
+
+        {/* --- Leaflet Map Container --- */}
+        <div style={{ height: '400px', width: '100%', borderRadius: '8px', overflow: 'hidden' }} className="mb-4 shadow-lg">
+          <MapContainer 
+            center={[22.5726, 88.3639]} // Default center (Kolkata)
+            zoom={10} 
+            style={{ height: '100%', width: '100%' }}
           >
-            {loading ? 'Searching...' : 'Search'}
-          </button>
-          <button
-            onClick={handleGetMyLocation}
-            disabled={loading}
-            className="bg-gray-500 text-white p-2 rounded disabled:opacity-50"
-          >
-            {loading ? '...' : 'Use My Location'}
-          </button>
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            <MapClickHandler onMapClick={handleMapClick} position={position} />
+          </MapContainer>
         </div>
 
-        {/* --- Search Results --- */}
-        {searchResults.length > 0 && (
-          <div className="mt-4 border-t pt-4">
-            <h3 className="font-semibold">Search Results:</h3>
-            <ul className="divide-y">
-              {searchResults.map((result) => (
-                <li
-                  key={result.place_id}
-                  onClick={() => handleSelectResult(result)}
-                  className="p-2 hover:bg-gray-100 cursor-pointer"
-                >
-                  {result.display_name}
-                </li>
-              ))}
-            </ul>
+        {/* --- Form for subscribing (only appears after pin is dropped) --- */}
+        {position && (
+          <div className="animate-fade-in">
+            <div className="mb-4">
+              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="location-name">
+                Location Name
+              </label>
+              <input
+                id="location-name"
+                type="text"
+                value={locationName}
+                onChange={(e) => setLocationName(e.target.value)}
+                placeholder="e.g., 'Home', 'Office', 'Kolkata Riverside'"
+                className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              />
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Selected Coordinates: {position.lat.toFixed(4)}, {position.lng.toFixed(4)}
+            </p>
+            <button
+              onClick={handleSubscribe}
+              disabled={isLoading}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-150 ease-in-out disabled:opacity-50"
+            >
+              {isLoading ? 'Subscribing...' : 'Subscribe to this Location'}
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mt-6 text-center">
+            {error}
           </div>
         )}
       </div>
-
-      {/* --- Step 2: Subscribe --- */}
-      {selectedLocation && (
-        <div className="p-4 border rounded-lg shadow-lg bg-green-50 mb-6">
-          <h2 className="text-lg font-semibold mb-2">2. Confirm and Subscribe</h2>
-          <p className="font-bold">{selectedLocation.name}</p>
-          <p className="text-sm text-gray-600">Lat: {selectedLocation.lat.toFixed(6)}</p>
-          <p className="text-sm text-gray-600">Lon: {selectedLocation.lon.toFixed(6)}</p>
-          <button
-            onClick={handleSubscribe}
-            className="mt-4 bg-green-500 text-white p-2 rounded"
-          >
-            Subscribe to {selectedLocation.name}
-          </button>
-        </div>
-      )}
-
-      {status && <p className="text-green-500 mt-4">{status}</p>}
-      {error && <p className="text-red-500 mt-4">{error}</p>}
     </div>
   );
-};
-
-export default CitySelectionPage;
-
+}
