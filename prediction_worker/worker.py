@@ -43,21 +43,26 @@ def update_location_timestamp(location_id):
     except Exception as e:
         print(f"❌ Error updating timestamp: {e}")
 
-# --- MODIFICATION 1: Get user ID and email ---
+# --- 
+# --- 
+# --- THIS FUNCTION IS NOW FIXED ---
+# --- 
+# --- 
 def get_subscribed_users(location_id):
     """Get all users (id and email) subscribed to a specific location."""
     try:
         # We join subscriptions with auth.users to get both ID and email
+        # The syntax is: "local_column, foreign_table_name(foreign_columns)"
         response = supabase.table("subscriptions").select(
-            "user_id, users:auth.users ( email )"
+            "user_id, auth.users ( email )"  # <-- FIX: Correct join syntax
         ).eq("location_id", location_id).execute()
         
         if response.data:
-            # Re-format the data to be a simple list of dicts
+            # The returned data will have a key "auth.users"
             return [
-                {"id": user["user_id"], "email": user["users"]["email"]} 
+                {"id": user["user_id"], "email": user["auth.users"]["email"]} # <-- FIX: Use "auth.users"
                 for user in response.data 
-                if user.get("users") # Ensure the join was successful
+                if user.get("auth.users") # <-- FIX: Check for "auth.users"
             ]
         return []
     except Exception as e:
@@ -85,7 +90,6 @@ def send_alert_email(user_email, location_name, flood_pct):
         # We catch the error, log it, but do NOT stop the worker
         print(f"❌ Error sending email: {e}")
 
-# --- MODIFICATION 2: Function to create the notification ---
 def create_notification(user_id, location_id, location_name, flood_pct):
     """Writes the alarm to the new 'notifications' table."""
     try:
@@ -127,7 +131,6 @@ def main_loop():
                 print("...but no users are subscribed to this location.")
                 continue
 
-            # --- MODIFICATION 3: Loop over user objects, not just emails ---
             for user in users_to_alert:
                 # 1. Send email (will try and continue on error)
                 send_alert_email(user['email'], loc['name'], flood_pct)
