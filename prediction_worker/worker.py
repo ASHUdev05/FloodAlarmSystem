@@ -44,9 +44,7 @@ def update_location_timestamp(location_id):
         print(f"❌ Error updating timestamp: {e}")
 
 # --- 
-# --- 
-# --- THIS FUNCTION IS NOW FIXED ---
-# --- 
+# --- THIS IS THE FIXED FUNCTION ---
 # --- 
 def get_subscribed_users(location_id):
     """Get all users (id and email) by calling our new database function."""
@@ -80,7 +78,6 @@ def send_alert_email(user_email, location_name, flood_pct):
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         sg.send(message)
     except Exception as e:
-        # We catch the error, log it, but do NOT stop the worker
         print(f"❌ Error sending email: {e}")
 
 def create_notification(user_id, location_id, location_name, flood_pct):
@@ -116,7 +113,7 @@ def main_loop():
 
         print(f"✅ Prediction complete: {flood_pct}%")
 
-        if flood_pct > THRESHOLD_PERCENT:
+        if flood_pct > 85.0:
             print(f"🔥 ALARM TRIGGERED! ({flood_pct}%)")
             users_to_alert = get_subscribed_users(loc['id'])
             
