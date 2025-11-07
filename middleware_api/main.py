@@ -1,14 +1,14 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, Annotated
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import uvicorn
 from contextlib import asynccontextmanager
-from typing import Annotated, List  # FIXED import
+from typing import Optional
 
-# Import the new prediction utils
+# Import the prediction utils
 from prediction_utils import load_prediction_model, get_prediction
 
 # Load environment variables
@@ -55,8 +55,6 @@ app.add_middleware(
 # --- Supabase Setup ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("SUPABASE_URL or SUPABASE_KEY environment variables not set")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
@@ -83,9 +81,8 @@ async def get_user_id(user_id: Annotated[str, Header()] = None):
 def root():
     return {"message": "Flood Alarm Middleware API", "model_loaded": app_state.get("model") is not None}
 
-# --- NEW: /predict Endpoint ---
 @app.get("/predict")
-def predict_live(lat: float, lon: float, user_id: Annotated[str, Depends(get_user_id)]):
+async def predict_live(lat: float, lon: float, user_id: Annotated[str, Depends(get_user_id)]):
     print(f"Running on-demand prediction for ({lat}, {lon})")
     
     model = app_state.get("model")
@@ -100,30 +97,60 @@ def predict_live(lat: float, lon: float, user_id: Annotated[str, Depends(get_use
     return {"latitude": lat, "longitude": lon, "flood_percentage": prediction_pct}
 
 # --- Subscription Endpoints ---
+
 @app.post("/subscribe", status_code=201)
-def subscribe_to_location(loc: LocationBase, user_id: str = Depends(get_user_id)):
+async def subscribe_to_location(loc: LocationBase, user_id: Annotated[str, Depends(get_user_id)]):
     try:
-        location_data = supabase.table("locations").upsert(
-            {"lat": loc.lat, "lon": loc.lon, "name": loc.name}
-        ).execute()
+        location_id = None
+        
+        # 1. Check if location already exists
+        # We must round the lat/lon to prevent tiny floating-point duplicates
+        # Rounding to 6 decimal places is accurate to ~11cm
+        rounded_lat = round(loc.lat, 6)
+        rounded_lon = round(loc.lon, 6)
 
-        location_id = location_data.data[0]['id']
+        location_res = supabase.table("locations").select("id").eq("lat", rounded_lat).eq("lon", rounded_lon).execute()
+        
+        if location_res.data:
+            # Location exists, use its ID
+            location_id = location_res.data[0]['id']
+        else:
+            # Location does not exist, create it
+            new_loc_res = supabase.table("locations").insert({
+                "lat": rounded_lat,
+                "lon": rounded_lon,
+                "name": loc.name
+            }).select("id").execute()
+            
+            if not new_loc_res.data:
+                 raise Exception("Failed to create new location entry.")
+            location_id = new_loc_res.data[0]['id']
 
+        # 2. Now, try to create the subscription
         subscription_data = supabase.table("subscriptions").insert({
             "user_id": user_id,
             "location_id": location_id
-        }).execute()
+        }).select("id").execute()
 
         return {"status": "success", "subscription_id": subscription_data.data[0]['id']}
 
     except Exception as e:
-        if "user_location_unique" in str(e):
-            raise HTTPException(status_code=400, detail="Already subscribed to this location")
-        print(f"Error in /subscribe: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_str = str(e)
+        # Check for the *subscription* constraint violation (user is already subscribed)
+        if "user_location_unique" in error_str:
+            raise HTTPException(status_code=400, detail="You are already subscribed to this location.")
+        
+        # Check for the *location* constraint violation (this is a fallback)
+        if "unique_lat_lon" in error_str:
+            raise HTTPException(status_code=400, detail="A location with these coordinates already exists, but subscription failed.")
 
-@app.get("/subscriptions", response_model=List[Subscription])  # FIXED type hint
-def get_my_subscriptions(user_id: str = Depends(get_user_id)):
+        # Log the unexpected error and return a 500
+        print(f"Error in /subscribe: {e}")
+        raise HTTPException(status_code=500, detail="An internal server error occurred.")
+
+
+@app.get("/subscriptions", response_model=list[Subscription])
+async def get_my_subscriptions(user_id: Annotated[str, Depends(get_user_id)]):
     try:
         data = supabase.rpc("get_user_subscriptions", {"p_user_id": user_id}).execute()
         return data.data
@@ -132,7 +159,7 @@ def get_my_subscriptions(user_id: str = Depends(get_user_id)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/subscribe/{location_id}")
-def unsubscribe(location_id: str, user_id: str = Depends(get_user_id)):
+async def unsubscribe(location_id: str, user_id: Annotated[str, Depends(get_user_id)]):
     try:
         supabase.table("subscriptions").delete().match({
             "user_id": user_id,
