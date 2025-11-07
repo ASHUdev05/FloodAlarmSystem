@@ -49,22 +49,15 @@ def update_location_timestamp(location_id):
 # --- 
 # --- 
 def get_subscribed_users(location_id):
-    """Get all users (id and email) subscribed to a specific location."""
+    """Get all users (id and email) by calling our new database function."""
     try:
-        # We join subscriptions with auth.users to get both ID and email
-        # The syntax is: "local_column, foreign_table_name(foreign_columns)"
-        response = supabase.table("subscriptions").select(
-            "user_id, auth.users ( email )"  # <-- FIX: Correct join syntax
-        ).eq("location_id", location_id).execute()
+        # This calls the SQL function you just created
+        response = supabase.rpc("get_subscribed_users", {
+            "p_location_id": location_id
+        }).execute()
         
-        if response.data:
-            # The returned data will have a key "auth.users"
-            return [
-                {"id": user["user_id"], "email": user["auth.users"]["email"]} # <-- FIX: Use "auth.users"
-                for user in response.data 
-                if user.get("auth.users") # <-- FIX: Check for "auth.users"
-            ]
-        return []
+        # The data will be a simple list of {'id': ..., 'email': ...}
+        return response.data
     except Exception as e:
         print(f"❌ Error fetching user emails/ids: {e}")
         return []
