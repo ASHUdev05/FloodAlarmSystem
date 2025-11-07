@@ -113,7 +113,7 @@ def main_loop():
 
         print(f"✅ Prediction complete: {flood_pct}%")
 
-        if flood_pct > 85.0:
+        if flood_pct > THRESHOLD_PERCENT:
             print(f"🔥 ALARM TRIGGERED! ({flood_pct}%)")
             users_to_alert = get_subscribed_users(loc['id'])
             
