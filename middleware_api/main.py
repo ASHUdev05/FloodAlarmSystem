@@ -1,5 +1,6 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, Header, Annotated
+from fastapi import FastAPI, Depends, HTTPException, Header
+from typing import Annotated
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
