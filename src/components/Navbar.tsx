@@ -3,8 +3,7 @@ import { useAuth } from '../AuthContext';
 import { supabase } from '../lib/api'; // Get supabase client from api.ts
 
 export default function Navbar() {
-  // FIX: Removed 'user' since it was not being used.
-  const { session } = useAuth();
+  const { session } = useAuth(); // 'user' was unused, so removed it.
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -12,7 +11,6 @@ export default function Navbar() {
     navigate('/');
   };
 
-  // Use session to check for login, as user object might be slightly delayed
   const isLoggedIn = !!session;
 
   return (
@@ -35,13 +33,14 @@ export default function Navbar() {
                 >
                   Dashboard
                 </Link>
-                {/* New Link to Live Check Page */}
+                {/* This is the link to your new map-based CitySelectionPage */}
                 <Link
-                  to="/live-check"
+                  to="/add-location"
                   className="text-gray-600 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium"
                 >
-                  Live Check
+                  Add Location
                 </Link>
+                {/* "Live Check" link has been removed */}
                 <button
                   onClick={handleLogout}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
@@ -71,4 +70,3 @@ export default function Navbar() {
     </nav>
   );
 }
-

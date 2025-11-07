@@ -5,9 +5,9 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import DataDisplayPage from './pages/DataDisplayPage';
-import CitySelectionPage from './pages/CitySelectionPage';
+import CitySelectionPage from './pages/CitySelectionPage'; // This is your map page
 import ProtectedRoute from './components/ProtectedRoute';
-import LiveCheckPage from './pages/LiveCheckPage'; // Import the new page
+// We no longer import LiveCheckPage
 
 function App() {
   return (
@@ -36,15 +36,7 @@ function App() {
             </ProtectedRoute>
           }
         />
-        {/* New Route for Live Check */}
-        <Route
-          path="/live-check"
-          element={
-            <ProtectedRoute>
-              <LiveCheckPage />
-            </ProtectedRoute>
-          }
-        />
+        {/* The /live-check route has been removed */}
       </Routes>
       <Footer />
     </div>
