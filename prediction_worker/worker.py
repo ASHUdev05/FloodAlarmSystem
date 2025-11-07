@@ -1,63 +1,68 @@
 import os
 import time
+import requests
 import numpy as np
-from supabase import create_client, Client
+from PIL import Image
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
-from PIL import Image
-import requests
+from supabase import create_client, Client
 
-# Environment variables
+# ==========================================================
+# 🔧 CONFIGURATION
+# ==========================================================
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # use SERVICE ROLE key in Actions
 MODEL_PATH = os.getenv("MODEL_PATH", "flood_model.h5")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "600"))  # seconds
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "600"))  # seconds between runs
 
-# Initialize Supabase client
+# ==========================================================
+# ⚙️ SETUP
+# ==========================================================
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Load the trained model
 print("Loading model...")
 model = load_model(MODEL_PATH)
 print("✅ Model loaded successfully!")
 
-# --------------------------------------------------------
-# Utility: Fetch all active monitoring locations
-# --------------------------------------------------------
+# ==========================================================
+# 📍 FETCH LOCATIONS TO CHECK
+# ==========================================================
 def get_locations():
-    res = supabase.table("locations").select("id,name,image_url").execute()
-    return res.data if res.data else []
+    try:
+        res = supabase.table("locations").select("id,name,image_url").execute()
+        return res.data or []
+    except Exception as e:
+        print(f"❌ Error fetching locations: {e}")
+        return []
 
-
-# --------------------------------------------------------
-# Utility: Predict flood probability
-# --------------------------------------------------------
+# ==========================================================
+# 🌊 PREDICT FLOOD PROBABILITY
+# ==========================================================
 def predict_flood(image_url: str) -> float:
     try:
         img = Image.open(requests.get(image_url, stream=True).raw).resize((256, 256))
         x = image.img_to_array(img) / 255.0
         x = np.expand_dims(x, axis=0)
-        pred = model.predict(x, verbose=0)[0][0]
-        return float(pred * 100)
+        prediction = model.predict(x, verbose=0)[0][0]
+        return float(prediction * 100)
     except Exception as e:
         print(f"❌ Prediction failed: {e}")
         return 0.0
 
-
-# --------------------------------------------------------
-# ✅ Fixed function: Fetch user emails subscribed to location
-# --------------------------------------------------------
+# ==========================================================
+# ✅ FIXED: FETCH SUBSCRIBED USER EMAILS (NO CROSS-SCHEMA QUERY)
+# ==========================================================
 def get_user_emails_for_location(location_id: str):
-    """Fetch user IDs from 'subscriptions' table and then get emails using auth API."""
+    """Fetch user_ids from subscriptions, then get their emails via Auth Admin API."""
     try:
-        # Step 1: Get subscribed user IDs
-        subs_res = supabase.table("subscriptions").select("user_id").eq("location_id", location_id).execute()
-        if not subs_res.data:
+        # 1️⃣ Get user_ids subscribed to this location
+        subs = supabase.table("subscriptions").select("user_id").eq("location_id", location_id).execute()
+        if not subs.data:
             return []
 
-        user_ids = [s["user_id"] for s in subs_res.data]
+        user_ids = [s["user_id"] for s in subs.data]
 
-        # Step 2: Fetch emails individually using auth.admin API
+        # 2️⃣ Fetch emails for each user_id
         emails = []
         for uid in user_ids:
             try:
@@ -66,39 +71,37 @@ def get_user_emails_for_location(location_id: str):
                     emails.append(user_info.user.email)
             except Exception as e:
                 print(f"⚠️ Could not fetch email for {uid}: {e}")
+
         return emails
 
     except Exception as e:
         print(f"❌ Error fetching user emails: {e}")
         return []
 
-
-# --------------------------------------------------------
-# Utility: Send notification (print or API)
-# --------------------------------------------------------
+# ==========================================================
+# 📬 SEND ALERT
+# ==========================================================
 def send_alarm(location_name: str, probability: float, emails: list[str]):
     if not emails:
-        print(f"...but no users are subscribed to this location.")
+        print("...but no users are subscribed to this location.")
         return
 
-    message = f"🚨 Flood Alert! {location_name}: {probability:.2f}% confidence."
-    print(f"Sending alerts to {len(emails)} users: {emails}")
-    # Here you could integrate email service, Twilio, etc.
-    # Example: sendgrid / supabase functions / etc.
+    message = f"🚨 Flood Alert: {location_name} — {probability:.2f}% confidence."
+    print(f"Sending alert to {len(emails)} users: {emails}")
+    # TODO: integrate your notification service (email/SMS/push)
 
-
-# --------------------------------------------------------
-# Main loop
-# --------------------------------------------------------
+# ==========================================================
+# 🔁 MAIN LOOP
+# ==========================================================
 def main_loop():
     print("--- Worker starting main loop ---")
-    locations = get_locations()
 
+    locations = get_locations()
     if not locations:
         print("No locations found.")
         return
 
-    print(f"Fetching locations to check ({len(locations)} total)...")
+    print(f"Fetching locations to check...")
 
     for loc in locations:
         loc_id = loc["id"]
@@ -106,7 +109,6 @@ def main_loop():
         img_url = loc["image_url"]
 
         print(f"Checking location: {loc_name} ({loc_id})")
-
         prob = predict_flood(img_url)
         print(f"✅ Prediction complete: {prob:.2f}%")
 
@@ -119,7 +121,9 @@ def main_loop():
 
     print("--- Worker loop finished ---")
 
-
+# ==========================================================
+# 🚀 ENTRY POINT
+# ==========================================================
 if __name__ == "__main__":
     while True:
         main_loop()
