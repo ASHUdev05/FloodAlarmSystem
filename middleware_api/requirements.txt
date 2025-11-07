@@ -7,3 +7,4 @@ fastapi-cors
 tensorflow
 numpy
 pillow
+requests
