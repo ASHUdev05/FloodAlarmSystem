@@ -68,10 +68,33 @@ def update_location_timestamp(location_id):
 def get_subscribed_users(location_id):
     """Get all subscribed users for a location."""
     try:
-        response = supabase.rpc("get_subscribed_users", {"p_location_id": location_id}).execute()
-        return response.data or []
+        # Step 1: Get subscribed user IDs
+        subs_response = supabase.table("subscriptions") \
+            .select("user_id") \
+            .eq("location_id", location_id) \
+            .execute()
+
+        if not subs_response.data or len(subs_response.data) == 0:
+            print("...no users subscribed.")
+            return []
+
+        user_ids = [sub["user_id"] for sub in subs_response.data]
+
+        # Step 2: Fetch corresponding user emails from auth.users
+        emails = []
+        for uid in user_ids:
+            user_resp = supabase.table("auth.users") \
+                .select("email") \
+                .eq("id", uid) \
+                .execute()
+
+            if user_resp.data:
+                emails.append(user_resp.data[0]["email"])
+
+        return emails
+
     except Exception as e:
-        print(f"❌ Error fetching user emails/ids: {e}")
+        print(f"❌ Error fetching user emails: {e}")
         return []
 
 
