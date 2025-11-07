@@ -44,7 +44,9 @@ def update_location_timestamp(location_id):
         print(f"❌ Error updating timestamp: {e}")
 
 # --- 
-# --- THIS IS THE FIXED FUNCTION ---
+# --- 
+# --- THIS IS THE CORRECT, FIXED FUNCTION ---
+# --- 
 # --- 
 def get_subscribed_users(location_id):
     """Get all users (id and email) by calling our new database function."""
@@ -122,10 +124,7 @@ def main_loop():
                 continue
 
             for user in users_to_alert:
-                # 1. Send email (will try and continue on error)
                 send_alert_email(user['email'], loc['name'], flood_pct)
-                
-                # 2. Create notification (the reliable fallback)
                 create_notification(user['id'], loc['id'], loc['name'], flood_pct)
         
         time.sleep(2)
