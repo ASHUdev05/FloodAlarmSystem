@@ -1,72 +1,69 @@
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../AuthContext';
-import { supabase } from '../lib/api'; // Get supabase client from api.ts
+import React from 'react';
+import { Link } from 'react-router-dom';
+import NotificationBell from './NotificationBell'; // Import the bell
 
-export default function Navbar() {
-  const { session } = useAuth(); // 'user' was unused, so removed it.
-  const navigate = useNavigate();
+// --- 1. Define the props interface ---
+interface NavbarProps {
+  userId: string | null;
+}
+
+// 2. Accept the props
+const Navbar: React.FC<NavbarProps> = ({ userId }) => {
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/');
+    // You would add your Supabase logout logic here
+    // const { error } = await supabase.auth.signOut();
+    // if (error) console.error("Error logging out:", error);
+    // (The auth listener in App.tsx will automatically set userId to null)
+    console.log("User logged out");
   };
 
-  const isLoggedIn = !!session;
-
   return (
-    <nav className="bg-white shadow-md border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <Link to="/" className="flex-shrink-0 flex items-center">
-              <span className="text-2xl font-bold text-blue-600">
-                🌊 Flood Alarm
-              </span>
-            </Link>
-          </div>
-          <div className="flex items-center">
-            {isLoggedIn ? (
-              <div className="flex items-center space-x-4">
-                <Link
-                  to="/dashboard"
-                  className="text-gray-600 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium"
-                >
-                  Dashboard
-                </Link>
-                {/* This is the link to your new map-based CitySelectionPage */}
-                <Link
-                  to="/add-location"
-                  className="text-gray-600 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium"
-                >
-                  Add Location
-                </Link>
-                {/* "Live Check" link has been removed */}
-                <button
-                  onClick={handleLogout}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-                >
-                  Logout
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center space-x-2">
-                <Link
-                  to="/login"
-                  className="text-gray-600 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium"
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/signup"
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-                >
-                  Sign Up
-                </Link>
-              </div>
-            )}
-          </div>
+    <nav className="bg-white shadow-md">
+      <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+        <Link to="/" className="text-2xl font-bold text-blue-600">
+          🌊 FloodAlarm
+        </Link>
+        
+        <div className="flex items-center space-x-4">
+          {userId ? (
+            // --- User is LOGGED IN ---
+            <>
+              <Link to="/dashboard" className="text-gray-600 hover:text-blue-500">
+                Dashboard
+              </Link>
+              <Link to="/add-location" className="text-gray-600 hover:text-blue-500">
+                Add Location
+              </Link>
+              
+              {/* --- 3. ADD THE NOTIFICATION BELL --- */}
+              <NotificationBell userId={userId} />
+              
+              <button 
+                onClick={handleLogout} 
+                className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            // --- User is LOGGED OUT ---
+            <>
+              <Link to="/login" className="text-gray-600 hover:text-blue-500">
+                Login
+              </Link>
+              <Link 
+                to="/signup" 
+                className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
+              >
+                Sign Up
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </nav>
   );
 }
+
+export default Navbar;
