@@ -1,13 +1,14 @@
 import os
 from fastapi import FastAPI, Depends, HTTPException, Header
-from typing import Annotated # <-- This is the fix for the import error
+# Import List and Optional from typing
+from typing import Annotated, List, Optional
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import uvicorn
 from contextlib import asynccontextmanager
-from typing import Optional
+from datetime import datetime  # Import datetime for the new model
 
 # Import the prediction utils
 from prediction_utils import load_prediction_model, get_prediction
@@ -71,6 +72,15 @@ class Subscription(BaseModel):
     lat: float
     lon: float
 
+# --- NEW: Pydantic Model for a Notification ---
+class Notification(BaseModel):
+    id: str
+    created_at: datetime
+    location_id: str
+    location_name: str
+    flood_percentage: float
+    is_read: bool
+
 # --- Auth Dependency ---
 # This must be async
 async def get_user_id(user_id: Annotated[str, Header()] = None):
@@ -118,7 +128,6 @@ async def subscribe_to_location(loc: LocationBase, user_id: Annotated[str, Depen
             location_id = location_res.data[0]['id']
         else:
             # Location does not exist, create it
-            # We remove the invalid .select() call here
             new_loc_res = supabase.table("locations").insert({
                 "lat": rounded_lat,
                 "lon": rounded_lon,
@@ -130,7 +139,6 @@ async def subscribe_to_location(loc: LocationBase, user_id: Annotated[str, Depen
             location_id = new_loc_res.data[0]['id']
 
         # 2. Now, try to create the subscription
-        # We remove the invalid .select() call here too
         subscription_data = supabase.table("subscriptions").insert({
             "user_id": user_id,
             "location_id": location_id
@@ -140,15 +148,10 @@ async def subscribe_to_location(loc: LocationBase, user_id: Annotated[str, Depen
 
     except Exception as e:
         error_str = str(e)
-        # Check for the *subscription* constraint violation (user is already subscribed)
         if "user_location_unique" in error_str:
             raise HTTPException(status_code=400, detail="You are already subscribed to this location.")
-        
-        # Check for the *location* constraint violation (this is a fallback)
         if "unique_lat_lon" in error_str:
             raise HTTPException(status_code=400, detail="A location with these coordinates already exists, but subscription failed.")
-
-        # Log the unexpected error and return a 500
         print(f"Error in /subscribe: {e}")
         raise HTTPException(status_code=500, detail="An internal server error occurred.")
 
@@ -174,6 +177,44 @@ async def unsubscribe(location_id: str, user_id: Annotated[str, Depends(get_user
     except Exception as e:
         print(f"Error in /unsubscribe: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- NEW: Notification Endpoints ---
+
+@app.get("/notifications", response_model=List[Notification])
+async def get_my_notifications(user_id: Annotated[str, Depends(get_user_id)]):
+    """
+    Get all notifications for the currently logged-in user,
+    newest first.
+    """
+    try:
+        data = supabase.table("notifications") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .order("created_at", desc=True) \
+            .execute()
+        return data.data
+    except Exception as e:
+        print(f"Error in /notifications: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/notifications/read")
+async def mark_notifications_as_read(user_id: Annotated[str, Depends(get_user_id)]):
+    """
+    Mark all unread notifications for the user as 'read'.
+    """
+    try:
+        supabase.table("notifications") \
+            .update({"is_read": True}) \
+            .eq("user_id", user_id) \
+            .eq("is_read", False) \
+            .execute()
+        return {"status": "success", "message": "All notifications marked as read"}
+    except Exception as e:
+        print(f"Error in /notifications/read: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Main entry point (for local running)
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 import os
 import time
-from datetime import datetime, timedelta, timezone  # <-- FIX 1
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from sendgrid import SendGridAPIClient
@@ -9,10 +9,10 @@ from prediction_utils import load_prediction_model, get_prediction
 
 # --- Config ---
 load_dotenv()
-THRESHOLD_PERCENT = 85.0  # Trigger alert at 85%
-CHECK_INTERVAL_HOURS = 1  # How often to check each location
+THRESHOLD_PERCENT = 85.0
+CHECK_INTERVAL_HOURS = 1
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")  # Service role key
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY") # Service role key
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 FROM_EMAIL = os.environ.get("FROM_EMAIL")
 
@@ -23,8 +23,7 @@ model = load_prediction_model()
 def get_locations_to_check():
     """Get all unique locations that haven't been checked in the last N hours."""
     print("Fetching locations to check...")
-    # 'lt' means 'less than'. Find locations checked > 1 hour ago
-    query_time = (datetime.now(timezone.utc) - timedelta(hours=CHECK_INTERVAL_HOURS)).isoformat() # <-- FIX 2
+    query_time = (datetime.now(timezone.utc) - timedelta(hours=CHECK_INTERVAL_HOURS)).isoformat()
     
     try:
         response = supabase.table("locations").select("*").or_(
@@ -39,24 +38,30 @@ def update_location_timestamp(location_id):
     """Update the 'last_checked_at' field for a location."""
     try:
         supabase.table("locations").update(
-            {"last_checked_at": datetime.now(timezone.utc).isoformat()}  # <-- FIX 3
+            {"last_checked_at": datetime.now(timezone.utc).isoformat()}
         ).eq("id", location_id).execute()
     except Exception as e:
         print(f"❌ Error updating timestamp: {e}")
 
+# --- MODIFICATION 1: Get user ID and email ---
 def get_subscribed_users(location_id):
-    """Get all users subscribed to a specific location."""
+    """Get all users (id and email) subscribed to a specific location."""
     try:
-        # We need the user's email, which is in the 'auth.users' table
-        response = supabase.rpc("get_emails_for_location", {
-            "p_location_id": location_id
-        }).execute()
+        # We join subscriptions with auth.users to get both ID and email
+        response = supabase.table("subscriptions").select(
+            "user_id, users:auth.users ( email )"
+        ).eq("location_id", location_id).execute()
         
         if response.data:
-            return [user['email'] for user in response.data]
+            # Re-format the data to be a simple list of dicts
+            return [
+                {"id": user["user_id"], "email": user["users"]["email"]} 
+                for user in response.data 
+                if user.get("users") # Ensure the join was successful
+            ]
         return []
     except Exception as e:
-        print(f"❌ Error fetching user emails: {e}")
+        print(f"❌ Error fetching user emails/ids: {e}")
         return []
 
 def send_alert_email(user_email, location_name, flood_pct):
@@ -77,7 +82,24 @@ def send_alert_email(user_email, location_name, flood_pct):
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         sg.send(message)
     except Exception as e:
+        # We catch the error, log it, but do NOT stop the worker
         print(f"❌ Error sending email: {e}")
+
+# --- MODIFICATION 2: Function to create the notification ---
+def create_notification(user_id, location_id, location_name, flood_pct):
+    """Writes the alarm to the new 'notifications' table."""
+    try:
+        print(f"Registering notification for user {user_id}...")
+        supabase.table("notifications").insert({
+            "user_id": user_id,
+            "location_id": location_id,
+            "location_name": location_name,
+            "flood_percentage": flood_pct,
+            "is_read": False
+        }).execute()
+    except Exception as e:
+        print(f"❌ Error creating notification: {e}")
+
 
 def main_loop():
     print("--- Worker starting main loop ---")
@@ -89,10 +111,7 @@ def main_loop():
     for loc in locations:
         print(f"\nChecking location: {loc['name']} ({loc['id']})")
         
-        # 1. Run the prediction
         flood_pct = get_prediction(model, loc['lat'], loc['lon'])
-        
-        # 2. Update its timestamp so we don't check it again right away
         update_location_timestamp(loc['id'])
 
         if flood_pct is None:
@@ -100,7 +119,6 @@ def main_loop():
 
         print(f"✅ Prediction complete: {flood_pct}%")
 
-        # 3. Check against threshold
         if flood_pct > THRESHOLD_PERCENT:
             print(f"🔥 ALARM TRIGGERED! ({flood_pct}%)")
             users_to_alert = get_subscribed_users(loc['id'])
@@ -109,10 +127,15 @@ def main_loop():
                 print("...but no users are subscribed to this location.")
                 continue
 
-            for email in users_to_alert:
-                send_alert_email(email, loc['name'], flood_pct)
+            # --- MODIFICATION 3: Loop over user objects, not just emails ---
+            for user in users_to_alert:
+                # 1. Send email (will try and continue on error)
+                send_alert_email(user['email'], loc['name'], flood_pct)
+                
+                # 2. Create notification (the reliable fallback)
+                create_notification(user['id'], loc['id'], loc['name'], flood_pct)
         
-        time.sleep(2) # Avoid rate-limiting
+        time.sleep(2)
 
     print("\n--- Worker loop finished ---")
 
