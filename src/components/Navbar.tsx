@@ -1,21 +1,18 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import NotificationBell from './NotificationBell'; // Import the bell
+import { supabase } from '../supabaseClient'; // Import the client for logout
 
-// --- 1. Define the props interface ---
+// Define the props interface
 interface NavbarProps {
   userId: string | null;
 }
 
-// 2. Accept the props
 const Navbar: React.FC<NavbarProps> = ({ userId }) => {
 
   const handleLogout = async () => {
-    // You would add your Supabase logout logic here
-    // const { error } = await supabase.auth.signOut();
-    // if (error) console.error("Error logging out:", error);
-    // (The auth listener in App.tsx will automatically set userId to null)
-    console.log("User logged out");
+    await supabase.auth.signOut();
+    // The auth listener in App.tsx will automatically set userId to null
   };
 
   return (
@@ -36,7 +33,7 @@ const Navbar: React.FC<NavbarProps> = ({ userId }) => {
                 Add Location
               </Link>
               
-              {/* --- 3. ADD THE NOTIFICATION BELL --- */}
+              {/* --- ADD THE NOTIFICATION BELL --- */}
               <NotificationBell userId={userId} />
               
               <button 
