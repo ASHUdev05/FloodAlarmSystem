@@ -1,4 +1,3 @@
-import Footer from "../components/Footer";
 import { Link } from "react-router-dom";
 
 export default function LandingPage() {
@@ -33,7 +32,6 @@ export default function LandingPage() {
           </div>
         </div>
       </main>
-      <Footer />
     </div>
   );
 }
