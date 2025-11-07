@@ -112,7 +112,52 @@ def main_loop():
 # ==========================================================
 # 🚀 ENTRY POINT
 # ==========================================================
+def main_loop():
+    print("--- Worker starting main loop ---")
+
+    try:
+        print("Fetching locations from Supabase...")
+        locations = get_locations()
+        print(f"Fetched {len(locations)} locations.")
+    except Exception as e:
+        print(f"❌ Error while fetching locations: {e}")
+        return
+
+    if not locations:
+        print("No locations found.")
+        return
+
+    for loc in locations:
+        loc_id = loc["id"]
+        loc_name = loc["name"]
+        lat, lon = loc["latitude"], loc["longitude"]
+
+        print(f"→ Checking location: {loc_name} ({lat}, {lon})")
+
+        try:
+            prob = get_prediction(model, lat, lon)
+            print(f"✅ Prediction result: {prob}")
+        except Exception as e:
+            print(f"❌ Prediction error for {loc_name}: {e}")
+            continue
+
+        if prob is None:
+            print(f"⚠️ Skipped {loc_name} due to prediction failure.")
+            continue
+
+        if prob > 80.0:
+            print(f"🔥 Flood alert triggered for {loc_name}!")
+            emails = get_user_emails_for_location(loc_id)
+            send_alarm(loc_name, prob, emails)
+        else:
+            print(f"🌤 Safe ({prob:.2f}%)")
+
+        print("-" * 40)
+
+    print("--- Worker loop finished ---\n")
+
 if __name__ == "__main__":
     while True:
         main_loop()
+        print(f"Sleeping for {CHECK_INTERVAL} seconds...\n")
         time.sleep(CHECK_INTERVAL)
