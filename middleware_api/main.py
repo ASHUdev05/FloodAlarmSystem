@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI, Depends, HTTPException, Header
-from typing import Annotated
+from typing import Annotated # <-- This is the fix for the import error
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
@@ -72,6 +72,7 @@ class Subscription(BaseModel):
     lon: float
 
 # --- Auth Dependency ---
+# This must be async
 async def get_user_id(user_id: Annotated[str, Header()] = None):
     if not user_id:
         raise HTTPException(status_code=401, detail="User-ID header missing")
@@ -79,9 +80,10 @@ async def get_user_id(user_id: Annotated[str, Header()] = None):
 
 # --- API Endpoints ---
 @app.get("/")
-def root():
+def root(): # This one doesn't need auth, so it can be 'def'
     return {"message": "Flood Alarm Middleware API", "model_loaded": app_state.get("model") is not None}
 
+# This endpoint must be async
 @app.get("/predict")
 async def predict_live(lat: float, lon: float, user_id: Annotated[str, Depends(get_user_id)]):
     print(f"Running on-demand prediction for ({lat}, {lon})")
@@ -99,14 +101,13 @@ async def predict_live(lat: float, lon: float, user_id: Annotated[str, Depends(g
 
 # --- Subscription Endpoints ---
 
+# This endpoint must be async
 @app.post("/subscribe", status_code=201)
 async def subscribe_to_location(loc: LocationBase, user_id: Annotated[str, Depends(get_user_id)]):
     try:
         location_id = None
         
         # 1. Check if location already exists
-        # We must round the lat/lon to prevent tiny floating-point duplicates
-        # Rounding to 6 decimal places is accurate to ~11cm
         rounded_lat = round(loc.lat, 6)
         rounded_lon = round(loc.lon, 6)
 
@@ -117,21 +118,23 @@ async def subscribe_to_location(loc: LocationBase, user_id: Annotated[str, Depen
             location_id = location_res.data[0]['id']
         else:
             # Location does not exist, create it
+            # We remove the invalid .select() call here
             new_loc_res = supabase.table("locations").insert({
                 "lat": rounded_lat,
                 "lon": rounded_lon,
                 "name": loc.name
-            }).select("id").execute()
+            }).execute()
             
             if not new_loc_res.data:
                  raise Exception("Failed to create new location entry.")
             location_id = new_loc_res.data[0]['id']
 
         # 2. Now, try to create the subscription
+        # We remove the invalid .select() call here too
         subscription_data = supabase.table("subscriptions").insert({
             "user_id": user_id,
             "location_id": location_id
-        }).select("id").execute()
+        }).execute()
 
         return {"status": "success", "subscription_id": subscription_data.data[0]['id']}
 
@@ -149,7 +152,7 @@ async def subscribe_to_location(loc: LocationBase, user_id: Annotated[str, Depen
         print(f"Error in /subscribe: {e}")
         raise HTTPException(status_code=500, detail="An internal server error occurred.")
 
-
+# This endpoint must be async
 @app.get("/subscriptions", response_model=list[Subscription])
 async def get_my_subscriptions(user_id: Annotated[str, Depends(get_user_id)]):
     try:
@@ -159,6 +162,7 @@ async def get_my_subscriptions(user_id: Annotated[str, Depends(get_user_id)]):
         print(f"Error in /subscriptions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# This endpoint must be async
 @app.delete("/subscribe/{location_id}")
 async def unsubscribe(location_id: str, user_id: Annotated[str, Depends(get_user_id)]):
     try:
