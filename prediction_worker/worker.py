@@ -1,136 +1,126 @@
 import os
 import time
-from datetime import datetime, timedelta, timezone
-from dotenv import load_dotenv
+import numpy as np
 from supabase import create_client, Client
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
-from prediction_utils import load_prediction_model, get_prediction
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
+from PIL import Image
+import requests
 
-# --- Config ---
-load_dotenv()
-THRESHOLD_PERCENT = 85.0
-CHECK_INTERVAL_HOURS = 1
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY") # Service role key
-SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
-FROM_EMAIL = os.environ.get("FROM_EMAIL")
+# Environment variables
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+MODEL_PATH = os.getenv("MODEL_PATH", "flood_model.h5")
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "600"))  # seconds
 
-# --- Initialize Clients ---
+# Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-model = load_prediction_model()
 
-def get_locations_to_check():
-    """Get all unique locations that haven't been checked in the last N hours."""
-    print("Fetching locations to check...")
-    query_time = (datetime.now(timezone.utc) - timedelta(hours=CHECK_INTERVAL_HOURS)).isoformat()
-    
+# Load the trained model
+print("Loading model...")
+model = load_model(MODEL_PATH)
+print("✅ Model loaded successfully!")
+
+# --------------------------------------------------------
+# Utility: Fetch all active monitoring locations
+# --------------------------------------------------------
+def get_locations():
+    res = supabase.table("locations").select("id,name,image_url").execute()
+    return res.data if res.data else []
+
+
+# --------------------------------------------------------
+# Utility: Predict flood probability
+# --------------------------------------------------------
+def predict_flood(image_url: str) -> float:
     try:
-        response = supabase.table("locations").select("*").or_(
-            f"last_checked_at.lt.{query_time},last_checked_at.is.null"
-        ).execute()
-        return response.data
+        img = Image.open(requests.get(image_url, stream=True).raw).resize((256, 256))
+        x = image.img_to_array(img) / 255.0
+        x = np.expand_dims(x, axis=0)
+        pred = model.predict(x, verbose=0)[0][0]
+        return float(pred * 100)
     except Exception as e:
-        print(f"❌ Error fetching locations: {e}")
+        print(f"❌ Prediction failed: {e}")
+        return 0.0
+
+
+# --------------------------------------------------------
+# ✅ Fixed function: Fetch user emails subscribed to location
+# --------------------------------------------------------
+def get_user_emails_for_location(location_id: str):
+    """Fetch user IDs from 'subscriptions' table and then get emails using auth API."""
+    try:
+        # Step 1: Get subscribed user IDs
+        subs_res = supabase.table("subscriptions").select("user_id").eq("location_id", location_id).execute()
+        if not subs_res.data:
+            return []
+
+        user_ids = [s["user_id"] for s in subs_res.data]
+
+        # Step 2: Fetch emails individually using auth.admin API
+        emails = []
+        for uid in user_ids:
+            try:
+                user_info = supabase.auth.admin.get_user_by_id(uid)
+                if user_info.user and user_info.user.email:
+                    emails.append(user_info.user.email)
+            except Exception as e:
+                print(f"⚠️ Could not fetch email for {uid}: {e}")
+        return emails
+
+    except Exception as e:
+        print(f"❌ Error fetching user emails: {e}")
         return []
 
-def update_location_timestamp(location_id):
-    """Update the 'last_checked_at' field for a location."""
-    try:
-        supabase.table("locations").update(
-            {"last_checked_at": datetime.now(timezone.utc).isoformat()}
-        ).eq("id", location_id).execute()
-    except Exception as e:
-        print(f"❌ Error updating timestamp: {e}")
 
-# --- 
-# --- 
-# --- THIS IS THE CORRECT, FIXED FUNCTION ---
-# --- 
-# --- 
-def get_subscribed_users(location_id):
-    """Get all users (id and email) by calling our new database function."""
-    try:
-        # This calls the SQL function you just created
-        response = supabase.rpc("get_subscribed_users", {
-            "p_location_id": location_id
-        }).execute()
-        
-        # The data will be a simple list of {'id': ..., 'email': ...}
-        return response.data
-    except Exception as e:
-        print(f"❌ Error fetching user emails/ids: {e}")
-        return []
-
-def send_alert_email(user_email, location_name, flood_pct):
-    """Use SendGrid to send a single email."""
-    print(f"Sending alert to {user_email} for {location_name}...")
-    message = Mail(
-        from_email=FROM_EMAIL,
-        to_emails=user_email,
-        subject=f"🚨 FLOOD ALARM: High Risk ({flood_pct}%) at {location_name}",
-        html_content=f"""
-        <strong>Warning!</strong><br>
-        <p>Our system has detected a high flood risk of <strong>{flood_pct}%</strong>
-        at your subscribed location: <strong>{location_name}</strong>.</p>
-        <p>Please take necessary precautions.</p>
-        """
-    )
-    try:
-        sg = SendGridAPIClient(SENDGRID_API_KEY)
-        sg.send(message)
-    except Exception as e:
-        print(f"❌ Error sending email: {e}")
-
-def create_notification(user_id, location_id, location_name, flood_pct):
-    """Writes the alarm to the new 'notifications' table."""
-    try:
-        print(f"Registering notification for user {user_id}...")
-        supabase.table("notifications").insert({
-            "user_id": user_id,
-            "location_id": location_id,
-            "location_name": location_name,
-            "flood_percentage": flood_pct,
-            "is_read": False
-        }).execute()
-    except Exception as e:
-        print(f"❌ Error creating notification: {e}")
-
-
-def main_loop():
-    print("--- Worker starting main loop ---")
-    locations = get_locations_to_check()
-    if not locations:
-        print("No locations to check. Sleeping.")
+# --------------------------------------------------------
+# Utility: Send notification (print or API)
+# --------------------------------------------------------
+def send_alarm(location_name: str, probability: float, emails: list[str]):
+    if not emails:
+        print(f"...but no users are subscribed to this location.")
         return
 
+    message = f"🚨 Flood Alert! {location_name}: {probability:.2f}% confidence."
+    print(f"Sending alerts to {len(emails)} users: {emails}")
+    # Here you could integrate email service, Twilio, etc.
+    # Example: sendgrid / supabase functions / etc.
+
+
+# --------------------------------------------------------
+# Main loop
+# --------------------------------------------------------
+def main_loop():
+    print("--- Worker starting main loop ---")
+    locations = get_locations()
+
+    if not locations:
+        print("No locations found.")
+        return
+
+    print(f"Fetching locations to check ({len(locations)} total)...")
+
     for loc in locations:
-        print(f"\nChecking location: {loc['name']} ({loc['id']})")
-        
-        flood_pct = get_prediction(model, loc['lat'], loc['lon'])
-        update_location_timestamp(loc['id'])
+        loc_id = loc["id"]
+        loc_name = loc["name"]
+        img_url = loc["image_url"]
 
-        if flood_pct is None:
-            continue
+        print(f"Checking location: {loc_name} ({loc_id})")
 
-        print(f"✅ Prediction complete: {flood_pct}%")
+        prob = predict_flood(img_url)
+        print(f"✅ Prediction complete: {prob:.2f}%")
 
-        if flood_pct > THRESHOLD_PERCENT:
-            print(f"🔥 ALARM TRIGGERED! ({flood_pct}%)")
-            users_to_alert = get_subscribed_users(loc['id'])
-            
-            if not users_to_alert:
-                print("...but no users are subscribed to this location.")
-                continue
+        if prob > 80.0:
+            print(f"🔥 ALARM TRIGGERED! ({prob:.2f}%)")
+            emails = get_user_emails_for_location(loc_id)
+            send_alarm(loc_name, prob, emails)
+        else:
+            print(f"🌤 Safe ({prob:.2f}%)")
 
-            for user in users_to_alert:
-                send_alert_email(user['email'], loc['name'], flood_pct)
-                create_notification(user['id'], loc['id'], loc['name'], flood_pct)
-        
-        time.sleep(2)
-
-    print("\n--- Worker loop finished ---")
+    print("--- Worker loop finished ---")
 
 
 if __name__ == "__main__":
-    main_loop()
+    while True:
+        main_loop()
+        time.sleep(CHECK_INTERVAL)
