@@ -13,8 +13,8 @@ from prediction_utils import load_prediction_model, get_prediction
 load_dotenv()
 
 THRESHOLD_PERCENT = 85.0
-CHECK_INTERVAL_HOURS = 1  # check frequency
-SLEEP_BETWEEN_RUNS = int(os.getenv("CHECK_INTERVAL", "3600"))  # fallback: 1 hour
+CHECK_INTERVAL_HOURS = 1
+SLEEP_BETWEEN_RUNS = int(os.getenv("CHECK_INTERVAL", "3600"))
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # Service role key
@@ -26,7 +26,6 @@ FROM_EMAIL = os.getenv("FROM_EMAIL")
 # ==========================================================
 print("Loading model (via prediction_utils.py)...")
 
-# Disable GPU to prevent TensorFlow CUDA hangs in CI
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
@@ -68,30 +67,28 @@ def update_location_timestamp(location_id):
 def get_subscribed_users(location_id):
     """Get all subscribed users for a location."""
     try:
-        # Step 1: Get subscribed user IDs
         subs_response = supabase.table("subscriptions") \
             .select("user_id") \
             .eq("location_id", location_id) \
             .execute()
 
-        if not subs_response.data or len(subs_response.data) == 0:
+        if not subs_response.data:
             print("...no users subscribed.")
             return []
 
         user_ids = [sub["user_id"] for sub in subs_response.data]
 
-        # Step 2: Fetch corresponding user emails from auth.users
-        emails = []
+        users = []
         for uid in user_ids:
-            user_resp = supabase.table("auth.users") \
-                .select("email") \
-                .eq("id", uid) \
-                .execute()
+            # Supabase admin API fetch
+            user_resp = supabase.auth.admin.get_user_by_id(uid)
+            if user_resp and user_resp.user and user_resp.user.email:
+                users.append({
+                    "id": uid,
+                    "email": user_resp.user.email
+                })
 
-            if user_resp.data:
-                emails.append(user_resp.data[0]["email"])
-
-        return emails
+        return users
 
     except Exception as e:
         print(f"❌ Error fetching user emails: {e}")
