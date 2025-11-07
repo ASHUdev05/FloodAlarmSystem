@@ -11,7 +11,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 // --- 1. ADD IMPORTS ---
 import { useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from './supabaseClient'; // <-- Import the single client
+import { supabase } from './lib/api'; // <-- Import the single client
 
 function App() {
   // --- 2. ADD AUTH STATE ---

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import NotificationBell from './NotificationBell'; // Import the bell
-import { supabase } from '../supabaseClient'; // Import the client for logout
+import { supabase } from '../lib/api'; // Import the client for logout
 
 // Define the props interface
 interface NavbarProps {
