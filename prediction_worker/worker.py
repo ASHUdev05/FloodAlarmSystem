@@ -72,44 +72,6 @@ def send_alarm(location_name: str, probability: float, emails: list[str]):
     # send_email(emails, subject="Flood Alert", body=message)
 
 # ==========================================================
-# 🔁 MAIN LOOP
-# ==========================================================
-def main_loop():
-    print("--- Worker starting main loop ---")
-
-    locations = get_locations()
-    if not locations:
-        print("No locations found.")
-        return
-
-    print(f"Fetched {len(locations)} locations to check...\n")
-
-    for loc in locations:
-        loc_id = loc["id"]
-        loc_name = loc["name"]
-        lat, lon = loc["latitude"], loc["longitude"]
-
-        print(f"Checking location: {loc_name} ({lat}, {lon})")
-        prob = get_prediction(model, lat, lon)
-
-        if prob is None:
-            print(f"⚠️ Skipped {loc_name} due to prediction error.\n")
-            continue
-
-        print(f"✅ Prediction complete: {prob:.2f}%")
-
-        if prob > 80.0:
-            print(f"🔥 ALARM TRIGGERED! ({prob:.2f}%)")
-            emails = get_user_emails_for_location(loc_id)
-            send_alarm(loc_name, prob, emails)
-        else:
-            print(f"🌤 Safe ({prob:.2f}%)")
-
-        print("-" * 40)
-
-    print("--- Worker loop finished ---\n")
-
-# ==========================================================
 # 🚀 ENTRY POINT
 # ==========================================================
 def main_loop():
