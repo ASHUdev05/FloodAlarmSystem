@@ -12,7 +12,7 @@ from supabase import create_client, Client
 # ==========================================================
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # use SERVICE ROLE key in Actions
-MODEL_PATH = os.getenv("MODEL_PATH", "flood_model.h5")
+MODEL_PATH = os.getenv("MODEL_PATH", "prediction_worker/flood_model.h5")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "600"))  # seconds between runs
 
 # ==========================================================
